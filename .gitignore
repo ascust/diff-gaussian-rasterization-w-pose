@@ -1,3 +1,8 @@
 build/
 diff_gaussian_rasterization.egg-info/
 dist/
+hip_rasterizer*
+diff_gaussian_rasterization/__pycache__/__init__.cpython-310.pyc
+diff_gaussian_rasterization/_C.cpython-310-x86_64-linux-gnu.so
+log.txt
+rasterize_points.hip

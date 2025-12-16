@@ -13,7 +13,6 @@
 #include "auxiliary.h"
 #include "math.h"
 #include <cooperative_groups.h>
-#include <cooperative_groups/reduce.h>
 namespace cg = cooperative_groups;
 
 // Backward pass for conversion of spherical harmonics to RGB for
@@ -538,12 +537,48 @@ __global__ void preprocessCUDA(
 		computeCov3D(idx, scales[idx], scale_modifier, rotations[idx], dL_dcov3D, dL_dscale, dL_drot);
 }
 
+// template <typename T>
+// __device__ void inline reduce_helper(int lane, int i, T *data) {
+//   if (lane < i) {
+//     // data[lane] += data[lane + i];
+//   }
+// }
+
 template <typename T>
-__device__ void inline reduce_helper(int lane, int i, T *data) {
-  if (lane < i) {
-    data[lane] += data[lane + i];
-  }
+__device__ inline void reduce_helper(int lane, int i, T* data) {
+    // generic version: could be empty or fallback
 }
+
+template <>
+__device__ inline void reduce_helper<float2>(int lane, int i, float2* data) {
+	if (lane < i)
+	{
+		 data[lane].x += data[lane + i].x;
+  		data[lane].y += data[lane + i].y;
+	}
+}
+
+template <>
+__device__ inline void reduce_helper<float3>(int lane, int i, float3* data) {
+	if (lane < i)
+	{
+		data[lane].x += data[lane + i].x;
+  		data[lane].y += data[lane + i].y;
+		data[lane].z += data[lane + i].z;
+	}
+}
+
+template <>
+__device__ inline void reduce_helper<float4>(int lane, int i, float4* data) {
+	if (lane < i)
+	{
+		data[lane].x += data[lane + i].x;
+  		data[lane].y += data[lane + i].y;
+		data[lane].z += data[lane + i].z;
+		data[lane].w += data[lane + i].w;
+	}
+}
+
 
 template <typename group_t, typename... Lists>
 __device__ void render_cuda_reduce_sum(group_t g, Lists... lists) {
@@ -817,7 +852,7 @@ void BACKWARD::preprocess(
 	// Somewhat long, thus it is its own kernel rather than being part of 
 	// "preprocess". When done, loss gradient w.r.t. 3D means has been
 	// modified and gradient w.r.t. 3D covariance matrix has been computed.	
-	computeCov2DCUDA << <(P + 255) / 256, 256 >> > (
+	computeCov2DCUDA <<<(P + 255) / 256, 256 >>> (
 		P,
 		means3D,
 		radii,
@@ -835,7 +870,7 @@ void BACKWARD::preprocess(
 	// Propagate gradients for remaining steps: finish 3D mean gradients,
 	// propagate color gradients to SH (if desireD), propagate 3D covariance
 	// matrix gradients to scale and rotation.
-	preprocessCUDA<NUM_CHANNELS> << < (P + 255) / 256, 256 >> > (
+	preprocessCUDA<NUM_CHANNELS> <<< (P + 255) / 256, 256 >>> (
 		P, D, M,
 		(float3*)means3D,
 		radii,
@@ -879,7 +914,7 @@ void BACKWARD::render(
 	float* dL_dcolors,
 	float* dL_ddepths)
 {
-	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
+	renderCUDA<NUM_CHANNELS> <<<grid, block >>>(
 		ranges,
 		point_list,
 		W, H,
